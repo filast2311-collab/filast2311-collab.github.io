@@ -1,5 +1,5 @@
 // Offline support for Krokly. Bump comes from the page hash, so each build refreshes the cache.
-const CACHE = "krokly-e2cfca1cc6";
+const CACHE = "krokly-c2d49367b6";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/apple-touch-icon.png", "./icons/favicon-32.png", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png", "./fonts/onest-cyrillic-400-normal.woff2", "./fonts/onest-cyrillic-500-normal.woff2", "./fonts/onest-cyrillic-600-normal.woff2", "./fonts/onest-cyrillic-700-normal.woff2", "./fonts/onest-latin-400-normal.woff2", "./fonts/onest-latin-500-normal.woff2", "./fonts/onest-latin-600-normal.woff2", "./fonts/onest-latin-700-normal.woff2", "./fonts/onest-latin-ext-400-normal.woff2", "./fonts/onest-latin-ext-500-normal.woff2", "./fonts/onest-latin-ext-600-normal.woff2", "./fonts/onest-latin-ext-700-normal.woff2", "./fonts/unbounded-cyrillic-600-normal.woff2", "./fonts/unbounded-cyrillic-800-normal.woff2", "./fonts/unbounded-latin-600-normal.woff2", "./fonts/unbounded-latin-800-normal.woff2", "./fonts/unbounded-latin-ext-600-normal.woff2", "./fonts/unbounded-latin-ext-800-normal.woff2"];
 self.addEventListener("install", e => {
   // cache: "reload" — не брати сторінку з HTTP-кешу браузера (GitHub Pages дає max-age=600)
@@ -14,8 +14,12 @@ self.addEventListener("fetch", e => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (req.mode === "navigate") {
-    // fresh page when online (no-cache: always revalidate, so an update shows on the next open), cached page when offline
-    e.respondWith(fetch(req.url, { cache: "no-cache" }).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put("./index.html", copy)); return res; })
+    // fresh page when online (no-cache: always revalidate, so an update shows on the next open), cached page when offline;
+    // only the app page itself is kept as the offline copy (a reminder .ics also arrives as a navigation)
+    e.respondWith(fetch(req.url, { cache: "no-cache" }).then(res => {
+      if (res.ok && (res.headers.get("content-type") || "").includes("text/html")) { const copy = res.clone(); caches.open(CACHE).then(c => c.put("./index.html", copy)); }
+      return res;
+    })
       .catch(() => caches.match("./index.html")));
     return;
   }

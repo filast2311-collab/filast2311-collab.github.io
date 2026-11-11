@@ -1,0 +1,22 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Krokly//Reminder//UK
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:krokly-daily-2000@filast2311-collab.github.io
+DTSTAMP:20261111T000000Z
+DTSTART:20261101T200000
+DURATION:PT10M
+RRULE:FREQ=DAILY
+SUMMARY:Krokly: 5 фраз на сьогодні
+DESCRIPTION:Відкрий Krokly і пройди 5 фраз: https://filas
+ t2311-collab.github.io/
+URL:https://filast2311-collab.github.io/
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Krokly: 5 фраз на сьогодні
+TRIGGER:PT0M
+END:VALARM
+END:VEVENT
+END:VCALENDAR
