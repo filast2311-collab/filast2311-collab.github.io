@@ -360,6 +360,16 @@ mark { background: transparent; color: color-mix(in srgb, var(--tc) var(--tint-a
 .say-words { font-family: var(--f-display); font-weight: 600; font-size: 1.1rem; }
 .say-words .hit { color: var(--ok); }
 .say-words .miss { color: var(--bad); text-decoration: underline wavy; text-underline-offset: 4px; }
+.say-label { display: flex; gap: 8px; align-items: flex-start; font-size: .9rem; font-weight: 600; color: var(--muted); line-height: 1.4; }
+.say-label svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.say-row { display: flex; gap: 8px; align-items: stretch; }
+.say-row input { flex: 1; min-width: 0; }
+.say-row .btn { flex: none; }
+.say-help summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
+.say-help p { font-size: .85rem; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+.say-right { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); padding-top: 10px; margin-top: 2px; }
+.say-right .speak { background: var(--surface); color: var(--ink); border: 1.5px solid var(--line); }
+.say-right .speak.slow { width: auto; padding: 0 10px; border-radius: 999px; }
 .rm-time { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
 .rm-time select { font: inherit; font-size: 1rem; font-weight: 600; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 46px; }
 a.btn { text-decoration: none; }
@@ -1013,12 +1023,19 @@ function buildQuestions(round) {
 }
 
 // ================= say the phrase =================
-// The browser's own speech recognition (Chrome, Safari) tells which words of the phrase it understood.
-// It is not a pronunciation score, so the page shows the words, never a percentage.
+// The browser's speech recognition (Chrome, a Safari tab) tells which words of the phrase it understood.
+// iOS does not offer it in apps added to the Home Screen (WebKit bug 225298): there the learner speaks
+// through the keyboard's dictation into a text field. Either way the page shows words, never a percentage.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-function canSay() { return PWA && !!SR; }
-let sayRec = null;
-function sayAbort() { const r = sayRec; sayRec = null; if (r) { r.onresult = r.onerror = r.onend = null; try { r.abort(); } catch (e) {} } }
+function canSay() { return PWA; }
+let sayTyped = false; // the learner switched to keyboard dictation
+function sayMode() { return sayTyped || !SR || (isIOS() && isStandalone()) ? "type" : "mic"; }
+let sayRec = null, sayTimers = [];
+function sayAbort() {
+  sayTimers.forEach(clearTimeout); sayTimers = [];
+  const r = sayRec; sayRec = null;
+  if (r) { r.onresult = r.onerror = r.onend = r.onstart = r.onaudiostart = null; try { r.abort(); } catch (e) {} }
+}
 const NUM_W = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
 const TENS_W = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
 function numWords(n) {
@@ -1040,46 +1057,102 @@ const SAY_ERR = {
   "not-allowed": "Немає доступу до мікрофона. Дозволь його для Krokly в налаштуваннях браузера або телефона.",
   "service-not-allowed": "Немає доступу до мікрофона. Дозволь його для Krokly в налаштуваннях браузера або телефона.",
   "audio-capture": "Не знайшов мікрофон на цьому пристрої.",
-  "network": "Для розпізнавання мовлення потрібен інтернет."
+  "network": "Для розпізнавання мовлення потрібен інтернет.",
+  "start": "Розпізнавання мовлення не запустилося на цьому пристрої."
 };
 function sayBlock() {
-  return `<div class="say"><button class="btn btn-soft" id="say-go">${ICON.mic} Скажи фразу</button><div id="say-out" class="say-out" aria-live="polite" hidden></div></div>`;
+  const out = `<div id="say-out" class="say-out" aria-live="polite" hidden></div>`;
+  if (sayMode() === "mic") return `<div class="say" id="say"><button class="btn btn-soft" id="say-go">${ICON.mic} Скажи фразу</button>${out}</div>`;
+  const help = isIOS()
+    ? "Диктовка слухає мовою клавіатури. Перед мікрофоном перемкни клавіатуру на English кнопкою з глобусом. Якщо англійської немає: Параметри → Загальні → Клавіатура → Клавіатури → Додати нову → English."
+    : "Диктовка слухає мовою клавіатури. Перед мікрофоном перемкни клавіатуру на English: кнопка з глобусом або довге натискання на пробіл.";
+  return `<div class="say" id="say">
+      <label class="say-label" for="say-in">${ICON.mic}<span>Скажи фразу: торкнись поля, натисни мікрофон на клавіатурі й вимов фразу англійською</span></label>
+      <div class="say-row"><input type="text" id="say-in" lang="en" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" placeholder="Тут з’явиться сказане"><button class="btn btn-soft btn-sm" id="say-check">Перевірити</button></div>
+      <details class="say-help"><summary>Клавіатура пише українською?</summary><p>${help}</p></details>
+      ${out}</div>`;
 }
-function sayResult(p, alts) {
+// the phrase with its audio, shown whenever something was not understood
+function sayRight(p) {
+  return `<div class="say-right"><span>Як правильно: <b>${esc(phraseText(p))}</b></span><span class="speak-group"><button class="speak sm slow" data-sayp="slow" aria-label="Прослухати повільно">0.7×</button><button class="speak sm" data-sayp="phrase" aria-label="Прослухати">${ICON.speak}</button></span></div>`;
+}
+function sayResult(p, alts, emptyMsg) {
   const tokens = phraseText(p).split(/\s+/).filter(Boolean), tw = tokens.map(sayWords);
   let best = null;
-  alts.forEach(a => {
+  alts.filter(a => a && a.trim()).forEach(a => {
     const heard = new Set(sayWords(a));
     const hits = tw.map(ws => ws.length > 0 && ws.every(w => heard.has(w)));
     const n = hits.filter(Boolean).length;
     if (!best || n > best.n) best = { a, hits, n };
   });
-  if (!best || !best.a.trim()) return ["warn", esc(SAY_ERR["no-speech"])];
+  if (!best) return ["warn", `<p>${esc(emptyMsg)}</p>${sayRight(p)}`];
   const words = tokens.map((t, i) => tw[i].length ? `<span class="${best.hits[i] ? "hit" : "miss"}">${esc(t)}</span>` : esc(t)).join(" ");
   const missed = tokens.filter((t, i) => tw[i].length && !best.hits[i]);
-  const msg = missed.length
-    ? `Телефон не розібрав: ${missed.map(t => `<b>${esc(t)}</b>`).join(", ")}. Послухай вимову і спробуй ще.`
-    : "Телефон зрозумів усю фразу.";
-  return [missed.length ? "warn" : "good", `<p class="say-words">${words}</p><p>${msg}</p><p class="small muted">Почув: «${esc(best.a.trim())}»</p>`];
+  const heardLine = `<p class="small muted">Почув: «${esc(best.a.trim())}»</p>`;
+  if (!missed.length) return ["good", `<p class="say-words">${words}</p><p>Зрозумів усю фразу. Чудово!</p>${heardLine}`];
+  const msg = best.n
+    ? `Не розібрав: ${missed.map(t => `<b>${esc(t)}</b>`).join(", ")}. Послухай, як правильно, і спробуй ще.`
+    : "Не розібрав жодного слова з фрази. Послухай, як правильно, і спробуй ще.";
+  return ["warn", `<p class="say-words">${words}</p><p>${msg}</p>${heardLine}${sayRight(p)}`];
 }
 function bindSay(p) {
-  const bt = document.getElementById("say-go"), out = document.getElementById("say-out");
-  if (!bt || !out) return;
-  const show = (cls, html) => { out.hidden = false; out.className = "say-out " + cls; out.innerHTML = html; };
+  const box = document.getElementById("say"), out = document.getElementById("say-out");
+  if (!box || !out) return;
+  const show = (cls, html) => {
+    out.hidden = false; out.className = "say-out " + cls; out.innerHTML = html;
+    out.querySelectorAll("[data-sayp]").forEach(b => b.onclick = () => play(p, b.dataset.sayp, b));
+    const sw = out.querySelector("[data-saytype]");
+    if (sw) sw.onclick = () => { sayAbort(); sayTyped = true; box.outerHTML = sayBlock(); bindSay(p); };
+  };
+  const result = (alts, emptyMsg) => { const [cls, html] = sayResult(p, alts, emptyMsg); show(cls, html); };
+
+  if (sayMode() === "type") {
+    const inp = document.getElementById("say-in");
+    let pause = 0;
+    const check = () => { clearTimeout(pause); result([inp.value], "Поле порожнє. Торкнись його, натисни мікрофон на клавіатурі й скажи фразу."); };
+    document.getElementById("say-check").onclick = check;
+    inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); check(); } };
+    // dictation types the words in as they are heard; check by itself after a short pause
+    inp.oninput = () => { clearTimeout(pause); if (inp.value.trim()) pause = setTimeout(check, 1800); };
+    return;
+  }
+
+  const bt = document.getElementById("say-go");
   const idle = label => { bt.classList.remove("listening"); bt.innerHTML = `${ICON.mic} ${label}`; };
+  const typeLink = `<button class="linkish small" data-saytype>Сказати через мікрофон клавіатури</button>`;
   bt.onclick = () => {
-    if (sayRec) { try { sayRec.stop(); } catch (e) {} return; }
+    if (sayRec) { sayRec.finish(); return; } // second tap: stop and check what was heard so far
     stopAudio();
     let rec;
-    try { rec = new SR(); } catch (e) { show("warn", "На цьому пристрої розпізнавання мовлення недоступне."); return; }
-    rec.lang = "en-US"; rec.interimResults = false; rec.continuous = false; rec.maxAlternatives = 5;
-    let settled = false;
-    rec.onresult = e => { settled = true; const r = e.results && e.results[0]; const [cls, html] = sayResult(p, r ? Array.from(r, a => a.transcript) : []); show(cls, html); };
-    rec.onerror = e => { if (e.error === "aborted") return; settled = true; show("warn", esc(SAY_ERR[e.error] || "Не вдалося розпізнати. Спробуй ще раз.")); };
-    rec.onend = () => { if (sayRec === rec) sayRec = null; idle("Сказати ще раз"); if (!settled) show("warn", esc(SAY_ERR["no-speech"])); };
+    try { rec = new SR(); } catch (e) { show("warn", `<p>${esc(SAY_ERR.start)}</p>${typeLink}`); return; }
+    rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 5;
+    let heard = [], started = false, done = false, pause = 0;
+    // every way out (result, error, end, timers, a second tap) comes here once, so the button never stays stuck
+    const finish = err => {
+      if (done) return; done = true;
+      clearTimeout(pause);
+      if (sayRec === rec) sayAbort(); else { try { rec.abort(); } catch (e) {} }
+      idle("Сказати ще раз");
+      if (err && !heard.length) show("warn", `<p>${esc(SAY_ERR[err] || "Не вдалося розпізнати. Спробуй ще раз.")}</p>${["start", "service-not-allowed", "network"].includes(err) ? typeLink : ""}${sayRight(p)}`);
+      else result(heard, SAY_ERR["no-speech"]);
+    };
+    rec.finish = () => finish();
+    rec.onstart = rec.onaudiostart = () => { started = true; };
+    rec.onresult = e => {
+      started = true;
+      const rs = Array.from(e.results);
+      heard = rs.length === 1 ? Array.from(rs[0], a => a.transcript) : [rs.map(r => r[0].transcript).join(" ")];
+      if (rs[rs.length - 1].isFinal) return finish();
+      show("", `<p class="small muted">Чую: «${esc(heard[0] || "")}»</p>`);
+      clearTimeout(pause); pause = setTimeout(() => finish(), 1600); // a pause ends the phrase
+    };
+    rec.onerror = e => { if (e.error !== "aborted") finish(e.error); };
+    rec.onend = () => finish();
     sayRec = rec;
-    bt.classList.add("listening"); bt.innerHTML = `${ICON.mic} Слухаю… говори`;
-    try { rec.start(); } catch (e) { sayRec = null; idle("Скажи фразу"); show("warn", "Не вдалося ввімкнути мікрофон. Спробуй ще раз."); }
+    bt.classList.add("listening"); bt.innerHTML = `${ICON.mic} Слухаю… торкнись, щоб зупинити`;
+    out.hidden = true;
+    sayTimers.push(setTimeout(() => { if (!started) finish("start"); }, 8000), setTimeout(() => finish(), 15000));
+    try { rec.start(); } catch (e) { finish("start"); }
   };
 }
 
