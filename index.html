@@ -1027,11 +1027,21 @@ function buildQuestions(round) {
 // iOS does not offer it in apps added to the Home Screen (WebKit bug 225298): there the learner speaks
 // through the keyboard's dictation into a text field. Either way the page shows words, never a percentage.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// Krokly's own recogniser (asr-worker: Whisper in Cloudflare) for where the browser has none
+const ASR_URL = "https://krokly-asr.asr-worker.workers.dev";
 function canSay() { return PWA; }
 let sayTyped = false; // the learner switched to keyboard dictation
-function sayMode() { return sayTyped || !SR || (isIOS() && isStandalone()) ? "type" : "mic"; }
+function canRecord() { return !!(ASR_URL && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
+// "mic": the browser recognises (Android Chrome, a Safari tab); "rec": record and send to ASR_URL (iPhone app); "type": keyboard dictation
+function sayMode() {
+  if (sayTyped) return "type";
+  if (SR && !(isIOS() && isStandalone())) return "mic";
+  return canRecord() ? "rec" : "type";
+}
 let sayRec = null, sayTimers = [];
+let sayCancelRec = null; // stops an ongoing recording without sending it
 function sayAbort() {
+  if (sayCancelRec) { const c = sayCancelRec; sayCancelRec = null; c(); }
   sayTimers.forEach(clearTimeout); sayTimers = [];
   const r = sayRec; sayRec = null;
   if (r) { r.onresult = r.onerror = r.onend = r.onstart = r.onaudiostart = null; try { r.abort(); } catch (e) {} }
@@ -1044,13 +1054,20 @@ function numWords(n) {
   return NUM_W[Math.floor(n / 100)] + " hundred" + (n % 100 ? " " + numWords(n % 100) : "");
 }
 const CONTR = { "can't": "can not", "cannot": "can not", "won't": "will not", "shan't": "shall not" };
+// British and American spelling, and words that sound exactly alike, count as the same word
+const SAME_WORD = { grey: "gray", pyjamas: "pajamas", programme: "program", programmes: "programs", tyre: "tire", tyres: "tires", cheque: "check", practise: "practice", enrol: "enroll", sceptical: "skeptical", aluminium: "aluminum", mum: "mom", cue: "queue", q: "queue", kew: "queue" };
+function sameWord(w) {
+  w = SAME_WORD[w] || w;
+  return w.replace(/our(s?)$/, "or$1").replace(/is(e|es|ed|ing|ation|ations)$/, "iz$1").replace(/ys(e|es|ed|ing)$/, "yz$1")
+    .replace(/tre(s?)$/, "ter$1").replace(/ogue(s?)$/, "og$1").replace(/([aeiou])ll(ed|ing|er|ers)$/, "$1l$2").replace(/ence$/, "ense");
+}
 // words to compare: lower case, digits spelled out, contractions opened, possessive 's dropped
 function sayWords(s) {
   return String(s).toLowerCase().replace(/[’‘`]/g, "'")
     .replace(/\b\d{1,3}\b/g, m => numWords(+m))
     .split(/[^a-z0-9']+/).filter(Boolean)
     .flatMap(w => (CONTR[w] || w.replace(/n't$/, " not").replace(/'re$/, " are").replace(/'ve$/, " have").replace(/'ll$/, " will").replace(/'d$/, " would").replace(/'m$/, " am").replace(/'s$/, "")).split(" "))
-    .map(w => w.replace(/'/g, "")).filter(Boolean);
+    .map(w => sameWord(w.replace(/'/g, ""))).filter(Boolean);
 }
 const SAY_ERR = {
   "no-speech": "Нічого не почув. Говори ближче до телефона і спробуй ще раз.",
@@ -1062,7 +1079,7 @@ const SAY_ERR = {
 };
 function sayBlock() {
   const out = `<div id="say-out" class="say-out" aria-live="polite" hidden></div>`;
-  if (sayMode() === "mic") return `<div class="say" id="say"><button class="btn btn-soft" id="say-go">${ICON.mic} Скажи фразу</button>${out}</div>`;
+  if (sayMode() !== "type") return `<div class="say" id="say"><button class="btn btn-soft" id="say-go">${ICON.mic} Скажи фразу</button>${out}</div>`;
   const help = isIOS()
     ? "Диктовка слухає мовою клавіатури. Перед мікрофоном перемкни клавіатуру на English кнопкою з глобусом. Якщо англійської немає: Параметри → Загальні → Клавіатура → Клавіатури → Додати нову → English."
     : "Диктовка слухає мовою клавіатури. Перед мікрофоном перемкни клавіатуру на English: кнопка з глобусом або довге натискання на пробіл.";
@@ -1118,8 +1135,9 @@ function bindSay(p) {
   }
 
   const bt = document.getElementById("say-go");
-  const idle = label => { bt.classList.remove("listening"); bt.innerHTML = `${ICON.mic} ${label}`; };
+  const idle = label => { bt.classList.remove("listening"); bt.disabled = false; bt.innerHTML = `${ICON.mic} ${label}`; };
   const typeLink = `<button class="linkish small" data-saytype>Сказати через мікрофон клавіатури</button>`;
+  if (sayMode() === "rec") { bindRecord(p, bt, idle, show, result, typeLink); return; }
   bt.onclick = () => {
     if (sayRec) { sayRec.finish(); return; } // second tap: stop and check what was heard so far
     stopAudio();
@@ -1153,6 +1171,106 @@ function bindSay(p) {
     out.hidden = true;
     sayTimers.push(setTimeout(() => { if (!started) finish("start"); }, 8000), setTimeout(() => finish(), 15000));
     try { rec.start(); } catch (e) { finish("start"); }
+  };
+}
+
+// --- "rec" mode: record the phrase here and let ASR_URL recognise it ---
+// 16 kHz mono WAV: what Whisper works with, and small (a 4 s phrase is ~130 KB)
+async function toPcm16k(blob) {
+  const C = window.AudioContext || window.webkitAudioContext, ctx = new C();
+  let audio;
+  try { audio = await ctx.decodeAudioData(await blob.arrayBuffer()); } finally { try { ctx.close(); } catch (e) {} }
+  const secs = Math.min(audio.duration, 15), off = new OfflineAudioContext(1, Math.max(1, Math.ceil(secs * 16000)), 16000);
+  const src = off.createBufferSource(); src.buffer = audio; src.connect(off.destination); src.start();
+  return (await off.startRendering()).getChannelData(0);
+}
+function wav16k(pcm) {
+  const v = new DataView(new ArrayBuffer(44 + pcm.length * 2)), w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE"); w(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) { const s = Math.max(-1, Math.min(1, pcm[i])); v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true); }
+  return new Blob([v.buffer], { type: "audio/wav" });
+}
+async function asrText(wav) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const r = await fetch(ASR_URL, { method: "POST", body: wav, headers: { "Content-Type": "audio/wav" }, signal: ctl.signal });
+    if (r.status === 429) throw new Error("rate");
+    if (!r.ok) throw new Error("server");
+    return String((await r.json()).text || "");
+  } catch (e) { throw new Error(e.message === "rate" ? "rate" : navigator.onLine === false ? "offline" : "server"); }
+  finally { clearTimeout(t); }
+}
+const REC_ERR = {
+  denied: "Немає доступу до мікрофона. Дозволь мікрофон для Krokly: Параметри → Safari → Мікрофон (або в налаштуваннях браузера).",
+  offline: "Для розпізнавання потрібен інтернет.",
+  rate: "Забагато спроб поспіль. Зачекай хвилину й спробуй ще.",
+  server: "Сервер розпізнавання зараз недоступний. Спробуй трохи пізніше."
+};
+function bindRecord(p, bt, idle, show, result, typeLink) {
+  let active = null; // { stop } while recording
+  bt.onclick = async () => {
+    if (active) { active.stop(); return; } // second tap: stop and check
+    if (bt.disabled) return;
+    stopAudio(); unlockAudio();
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch (e) { show("warn", `<p>${esc(e && e.name === "NotAllowedError" ? REC_ERR.denied : "Не вдалося ввімкнути мікрофон.")}</p>${typeLink}${sayRight(p)}`); return; }
+    const mime = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m));
+    let mr;
+    try { mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined); }
+    catch (e) { stream.getTracks().forEach(t => t.stop()); show("warn", `<p>Запис на цьому пристрої недоступний.</p>${typeLink}${sayRight(p)}`); return; }
+    const chunks = [];
+    mr.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    // a simple voice meter: stop after a pause once the phrase has been said
+    let meter = null, timer = 0;
+    const C = window.AudioContext || window.webkitAudioContext;
+    try {
+      const ac = new C(); ac.resume && ac.resume();
+      const an = ac.createAnalyser(); an.fftSize = 1024; ac.createMediaStreamSource(stream).connect(an);
+      const buf = new Float32Array(an.fftSize), t0 = Date.now();
+      let floor = 1, spoke = 0, quietSince = 0;
+      timer = setInterval(() => {
+        an.getFloatTimeDomainData(buf);
+        let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length), now = Date.now();
+        if (now - t0 < 400) { floor = Math.min(floor, rms); return; }
+        const th = Math.max(0.012, floor * 3);
+        if (rms > th) { spoke = spoke || now; quietSince = 0; }
+        else if (spoke) { quietSince = quietSince || now; if (now - quietSince > 1300 && now - spoke > 500) finish(); }
+        if (!spoke && now - t0 > 7000) finish();
+      }, 100);
+      meter = ac;
+    } catch (e) {}
+    let done = false;
+    const release = () => { clearInterval(timer); if (meter) { try { meter.close(); } catch (e) {} } stream.getTracks().forEach(t => t.stop()); };
+    const finish = () => { if (done) return; done = true; active = null; sayCancelRec = null; release(); try { mr.stop(); } catch (e) { mr.onstop && mr.onstop(); } };
+    mr.onstop = async () => {
+      if (!done) { done = true; release(); }
+      if (cancelled) return;
+      bt.disabled = true; bt.classList.remove("listening"); bt.innerHTML = `${ICON.mic} Розпізнаю…`;
+      try {
+        const blob = new Blob(chunks, { type: mr.mimeType || mime || "audio/mp4" });
+        if (!blob.size) throw new Error("empty");
+        const text = await asrText(wav16k(await toPcm16k(blob)));
+        if (cancelled) return;
+        idle("Сказати ще раз");
+        result([text], "Нічого не почув. Говори ближче до телефона і спробуй ще раз.");
+      } catch (e) {
+        if (cancelled) return;
+        idle("Сказати ще раз");
+        const m = REC_ERR[e.message];
+        show("warn", `<p>${esc(m || "Не вдалося розпізнати запис. Спробуй ще раз.")}</p>${m && e.message !== "rate" ? typeLink : ""}${sayRight(p)}`);
+      }
+    };
+    let cancelled = false;
+    sayCancelRec = () => { cancelled = true; finish(); };
+    active = { stop: finish };
+    sayTimers.push(setTimeout(finish, 10000)); // a phrase never needs longer
+    mr.start();
+    bt.classList.add("listening"); bt.innerHTML = `${ICON.mic} Слухаю… торкнись, щоб зупинити`;
+    const out = document.getElementById("say-out"); if (out) out.hidden = true;
   };
 }
 
