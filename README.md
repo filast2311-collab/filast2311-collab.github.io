@@ -7,4 +7,4 @@
 Збірка готова, нічого компілювати не треба: достатньо викласти ці файли на GitHub Pages або Netlify.
 
 Прогрес кожної людини зберігається лише на її пристрої.
-Шрифти Onest і Unbounded поширюються за ліцензією SIL Open Font License (див. папку fonts).
+Шрифти Manrope і Montserrat Alternates поширюються за ліцензією SIL Open Font License (див. папку fonts).
