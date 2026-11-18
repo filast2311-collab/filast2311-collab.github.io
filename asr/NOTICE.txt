@@ -1,0 +1,5 @@
+Розпізнавання мовлення в Krokly працює на самому телефоні.
+
+- Модель Whisper base.en: OpenAI, ліцензія MIT (https://github.com/openai/whisper). Версія ONNX: onnx-community/whisper-base.en на Hugging Face.
+- transformers.js: Hugging Face, ліцензія Apache-2.0 (lib/transformers-LICENSE.txt).
+- ONNX Runtime Web: Microsoft, ліцензія MIT (lib/onnxruntime-LICENSE.txt).

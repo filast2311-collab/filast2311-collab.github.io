@@ -8,3 +8,4 @@
 
 Прогрес кожної людини зберігається лише на її пристрої.
 Шрифти Manrope і Montserrat Alternates поширюються за ліцензією SIL Open Font License (див. папку fonts).
+Розпізнавання мовлення: Whisper base.en (MIT), transformers.js (Apache-2.0), ONNX Runtime Web (MIT), див. asr/NOTICE.txt.
