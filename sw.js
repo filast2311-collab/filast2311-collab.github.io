@@ -1,6 +1,6 @@
 // Offline support for Krokly. Bump comes from the page hash, so each build refreshes the cache.
-const CACHE = "krokly-403c993d99";
-const ASR_CACHE = "asr-3f6d8c316a"; // модель розпізнавання: власний кеш, живе між оновленнями, міняється лише з моделлю
+const CACHE = "krokly-b117746096";
+const ASR_CACHE = "asr-46a227bcaf"; // модель розпізнавання: власний кеш, живе між оновленнями, міняється лише з моделлю
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/apple-touch-icon.png", "./icons/favicon-32.png", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png", "./fonts/manrope-cyrillic-400-normal.woff2", "./fonts/manrope-cyrillic-500-normal.woff2", "./fonts/manrope-cyrillic-600-normal.woff2", "./fonts/manrope-cyrillic-700-normal.woff2", "./fonts/manrope-cyrillic-800-normal.woff2", "./fonts/manrope-latin-400-normal.woff2", "./fonts/manrope-latin-500-normal.woff2", "./fonts/manrope-latin-600-normal.woff2", "./fonts/manrope-latin-700-normal.woff2", "./fonts/manrope-latin-800-normal.woff2", "./fonts/manrope-latin-ext-400-normal.woff2", "./fonts/manrope-latin-ext-500-normal.woff2", "./fonts/manrope-latin-ext-600-normal.woff2", "./fonts/manrope-latin-ext-700-normal.woff2", "./fonts/manrope-latin-ext-800-normal.woff2", "./fonts/montserrat-alternates-cyrillic-600-normal.woff2", "./fonts/montserrat-alternates-cyrillic-700-normal.woff2", "./fonts/montserrat-alternates-cyrillic-800-normal.woff2", "./fonts/montserrat-alternates-latin-600-normal.woff2", "./fonts/montserrat-alternates-latin-700-normal.woff2", "./fonts/montserrat-alternates-latin-800-normal.woff2", "./fonts/montserrat-alternates-latin-ext-600-normal.woff2", "./fonts/montserrat-alternates-latin-ext-700-normal.woff2", "./fonts/montserrat-alternates-latin-ext-800-normal.woff2"];
 // Ізоляція сторінки (COOP/COEP). GitHub Pages таких заголовків не ставить, тож їх додає service worker.
 // З ними браузер дає SharedArrayBuffer, і розпізнавання мовлення на телефоні рахує кількома потоками, а не одним.
@@ -37,7 +37,7 @@ self.addEventListener("fetch", e => {
     return;
   }
   if (req.headers.has("range")) return;
-  if (url.pathname.includes("/asr/")) {
+  if (url.pathname.includes("/asr/") && !url.pathname.endsWith("/worker.js")) {
     e.respondWith(caches.open(ASR_CACHE).then(c => c.match(req, { ignoreSearch: true }).then(hit => hit || fetch(req).then(res => {
       if (res.ok && res.status === 200) c.put(req, res.clone());
       return res;
