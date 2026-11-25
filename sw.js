@@ -1,5 +1,5 @@
 // Offline support for Krokly. Bump comes from the page hash, so each build refreshes the cache.
-const CACHE = "krokly-ee6a7a7077";
+const CACHE = "krokly-b2aa56a470";
 const ASR_CACHE = "asr-46a227bcaf"; // модель розпізнавання: власний кеш, живе між оновленнями, міняється лише з моделлю
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/apple-touch-icon.png", "./icons/favicon-32.png", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png", "./fonts/manrope-cyrillic-400-normal.woff2", "./fonts/manrope-cyrillic-500-normal.woff2", "./fonts/manrope-cyrillic-600-normal.woff2", "./fonts/manrope-cyrillic-700-normal.woff2", "./fonts/manrope-cyrillic-800-normal.woff2", "./fonts/manrope-latin-400-normal.woff2", "./fonts/manrope-latin-500-normal.woff2", "./fonts/manrope-latin-600-normal.woff2", "./fonts/manrope-latin-700-normal.woff2", "./fonts/manrope-latin-800-normal.woff2", "./fonts/manrope-latin-ext-400-normal.woff2", "./fonts/manrope-latin-ext-500-normal.woff2", "./fonts/manrope-latin-ext-600-normal.woff2", "./fonts/manrope-latin-ext-700-normal.woff2", "./fonts/manrope-latin-ext-800-normal.woff2", "./fonts/montserrat-alternates-cyrillic-600-normal.woff2", "./fonts/montserrat-alternates-cyrillic-700-normal.woff2", "./fonts/montserrat-alternates-cyrillic-800-normal.woff2", "./fonts/montserrat-alternates-latin-600-normal.woff2", "./fonts/montserrat-alternates-latin-700-normal.woff2", "./fonts/montserrat-alternates-latin-800-normal.woff2", "./fonts/montserrat-alternates-latin-ext-600-normal.woff2", "./fonts/montserrat-alternates-latin-ext-700-normal.woff2", "./fonts/montserrat-alternates-latin-ext-800-normal.woff2"];
 // Ізоляція сторінки (COOP/COEP). GitHub Pages таких заголовків не ставить, тож їх додає service worker.
@@ -19,6 +19,19 @@ self.addEventListener("install", e => {
 });
 self.addEventListener("activate", e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => (k.startsWith("krokly-") && k !== CACHE) || (k.startsWith("asr-") && k !== ASR_CACHE)).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+});
+// щоденне нагадування з asr-worker (push.js): показуємо, а дотик відкриває застосунок
+self.addEventListener("push", e => {
+  let d = {}; try { d = e.data ? e.data.json() : {}; } catch (x) { d = { body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Krokly", { body: d.body || "Кілька хвилин англійської?", icon: "./icons/icon-192.png", badge: "./icons/icon-192.png", tag: "krokly-daily", data: { url: d.url || "./" } }));
+});
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+    for (const c of list) if (c.url.startsWith(self.registration.scope) && "focus" in c) return c.focus();
+    return self.clients.openWindow(url);
+  }));
 });
 self.addEventListener("fetch", e => {
   const req = e.request;
