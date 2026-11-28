@@ -1,5 +1,5 @@
 // Offline support for Krokly. Bump comes from the page hash, so each build refreshes the cache.
-const CACHE = "krokly-c0ec335bf5";
+const CACHE = "krokly-bec1e10e39";
 const ASR_CACHE = "asr-46a227bcaf"; // модель розпізнавання: власний кеш, живе між оновленнями, міняється лише з моделлю
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/apple-touch-icon.png", "./icons/favicon-32.png", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png", "./fonts/FixelDisplay-Bold.woff2", "./fonts/FixelDisplay-ExtraBold.woff2", "./fonts/FixelDisplay-SemiBold.woff2", "./fonts/FixelText-Bold.woff2", "./fonts/FixelText-ExtraBold.woff2", "./fonts/FixelText-Medium.woff2", "./fonts/FixelText-Regular.woff2", "./fonts/FixelText-SemiBold.woff2"];
 // Ізоляція сторінки (COOP/COEP). GitHub Pages таких заголовків не ставить, тож їх додає service worker.
