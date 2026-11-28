@@ -1,5 +1,5 @@
 // Offline support for Krokly. Bump comes from the page hash, so each build refreshes the cache.
-const CACHE = "krokly-bec1e10e39";
+const CACHE = "krokly-5fe234c06d";
 const ASR_CACHE = "asr-46a227bcaf"; // модель розпізнавання: власний кеш, живе між оновленнями, міняється лише з моделлю
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/apple-touch-icon.png", "./icons/favicon-32.png", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png", "./fonts/FixelDisplay-Bold.woff2", "./fonts/FixelDisplay-ExtraBold.woff2", "./fonts/FixelDisplay-SemiBold.woff2", "./fonts/FixelText-Bold.woff2", "./fonts/FixelText-ExtraBold.woff2", "./fonts/FixelText-Medium.woff2", "./fonts/FixelText-Regular.woff2", "./fonts/FixelText-SemiBold.woff2"];
 // Ізоляція сторінки (COOP/COEP). GitHub Pages таких заголовків не ставить, тож їх додає service worker.
@@ -43,7 +43,7 @@ self.addEventListener("fetch", e => {
     // fresh page when online (no-cache: always revalidate, so an update shows on the next open), cached page when offline;
     // only the app page itself is kept as the offline copy (a reminder .ics also arrives as a navigation)
     e.respondWith(fetch(req.url, { cache: "no-cache" }).then(res => {
-      if (res.ok && (res.headers.get("content-type") || "").includes("text/html")) { const copy = res.clone(); caches.open(CACHE).then(c => c.put("./index.html", copy)); }
+      if (res.ok && /\/(index\.html)?$/.test(url.pathname) && (res.headers.get("content-type") || "").includes("text/html")) { const copy = res.clone(); caches.open(CACHE).then(c => c.put("./index.html", copy)); }
       return res;
     })
       .catch(() => caches.match("./index.html")).then(iso));

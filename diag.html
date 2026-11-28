@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Krokly · перевірка екрана</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Тимчасова сторінка (28.11.2026): на iPhone у застосунку з іконки вгорі розмивається текст, а нижня панель
+     піднімається над краєм. Відтворити на ПК не можна, тож тут три способи зверстати той самий екран.
+     Михайло відкриває кожен і каже, де вгорі чисто, а панель на самому дні. -->
+<style>
+:root { --bg: #FBF3EA; --ink: #3A1C22; --muted: #7A5A5F; --surface: #fff; }
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { margin: 0; color: var(--ink); font: 17px/1.6 system-ui, sans-serif; }
+.head { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: var(--bg); }
+.head b { font-size: 1.05rem; }
+.x { width: 44px; height: 44px; border-radius: 50%; border: 0; background: #fff; font-size: 20px; }
+.txt { padding: 0 16px 16px; }
+.txt p { background: #fff; border-radius: 18px; padding: 14px 16px; margin: 0 0 12px; }
+.nums { font: 13px/1.5 ui-monospace, monospace; background: #fff3; padding: 8px 16px; white-space: pre-wrap; }
+.tabbar { display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); border-radius: 22px 22px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.1); padding: 10px 6px calc(6px + env(safe-area-inset-bottom, 0px)); text-align: center; font-size: 13px; font-weight: 600; }
+.vars { display: flex; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
+.vars a { padding: 8px 14px; border-radius: 999px; background: var(--ink); color: var(--bg); text-decoration: none; font-weight: 600; }
+.vars a.on { background: #E8833A; }
+/* В1 — як зараз у застосунку: прокручується вся сторінка, смуга під годинником, липка шапка, панель position: fixed */
+.v1 :root, html.v1 { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.v1 body { padding-bottom: 90px; }
+.v1 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.v1 .head { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+.v1 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; }
+/* В2 — прокручується лише середина екрана (як на головній, де все гаразд): сама сторінка не рухається */
+html.v2, .v2 body { height: 100%; overflow: hidden; }
+.v2 body { display: flex; flex-direction: column; height: 100dvh; padding-top: env(safe-area-inset-top, 0px); }
+.v2 .mid { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.v2 .tabbar { flex: none; }
+/* В3 — як зараз, але без відступів у html, з висотою «на весь екран» і щільнішою смугою під годинником */
+html.v3 { min-height: calc(100% + env(safe-area-inset-top, 0px)); }
+.v3 body { padding-top: env(safe-area-inset-top, 0px); padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+.v3 body::before { content: ""; position: fixed; inset: 0 0 auto; height: calc(env(safe-area-inset-top, 0px) + 6px); z-index: 10; background: var(--bg); }
+.v3 .head { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+.v3 .tabbar { position: fixed; left: 0; right: 0; bottom: 0; }
+</style>
+</head>
+<body>
+<div class="mid">
+  <div class="head"><button class="x" onclick="location.href='./'">✕</button><b>Перевірка екрана · <span id="vn"></span></b></div>
+  <div class="vars"><a href="?v=1" data-v="1">Варіант 1</a><a href="?v=2" data-v="2">Варіант 2</a><a href="?v=3" data-v="3">Варіант 3</a><a href="./">До застосунку</a></div>
+  <div class="txt">
+    <p><b>Що зробити:</b> прокрути цей текст вниз і вгору. Подивись: 1) чи розмиваються букви під годинником угорі; 2) чи нижня панель стоїть на самому дні екрана, без смуги під нею. Потім перемкни варіант і повтори. Напиши, який варіант чистий.</p>
+    <div class="nums" id="nums"></div>
+  </div>
+  <div class="txt" id="filler"></div>
+</div>
+<nav class="tabbar"><span>Сьогодні</span><span>Читанка</span><span>Словник</span><span>Рівень</span><span>Налашт.</span></nav>
+<script>
+const v = (new URLSearchParams(location.search).get("v") || "1");
+document.documentElement.className = "v" + v;
+document.getElementById("vn").textContent = "варіант " + v;
+document.querySelectorAll("[data-v]").forEach(a => a.classList.toggle("on", a.dataset.v === v));
+const para = "MARLEY was dead: to begin with. There is no doubt whatever about that. The register of his burial was signed by the clergyman, the clerk, the undertaker, and the chief mourner. Марлі був мертвий, почнімо з цього.";
+document.getElementById("filler").innerHTML = Array.from({ length: 14 }, (_, i) => `<p>${i + 1}. ${para}</p>`).join("");
+function nums() {
+  const tb = document.querySelector(".tabbar").getBoundingClientRect(), vv = window.visualViewport;
+  const probe = document.createElement("div"); probe.style.cssText = "position:fixed;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)"; document.body.appendChild(probe);
+  const cs = getComputedStyle(probe), sat = cs.paddingTop, sab = cs.paddingBottom; probe.remove();
+  document.getElementById("nums").textContent =
+    `з іконки: ${matchMedia("(display-mode: standalone)").matches || navigator.standalone === true ? "так" : "ні"}\n` +
+    `вікно ${innerWidth}×${innerHeight}, екран ${screen.width}×${screen.height}\n` +
+    `visualViewport ${vv ? Math.round(vv.height) + " (зсув " + Math.round(vv.offsetTop) + ")" : "—"}\n` +
+    `безпечні відступи: угорі ${sat}, унизу ${sab}\n` +
+    `низ панелі ${Math.round(tb.bottom)} з ${innerHeight}: ${Math.round(innerHeight - tb.bottom) === 0 ? "на дні" : "щілина " + Math.round(innerHeight - tb.bottom) + " px"}`;
+}
+nums(); addEventListener("resize", nums); addEventListener("scroll", nums, { passive: true }); document.querySelector(".mid").addEventListener("scroll", nums, { passive: true }); setInterval(nums, 1000);
+</script>
+</body>
+</html>
